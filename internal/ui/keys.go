@@ -13,6 +13,7 @@ type KeyMap struct {
 	Diff       key.Binding
 	Export     key.Binding
 	Rescan     key.Binding
+	Edit       key.Binding
 	Help       key.Binding
 	Up         key.Binding
 	Down       key.Binding
@@ -64,6 +65,10 @@ var Keys = KeyMap{
 	Rescan: key.NewBinding(
 		key.WithKeys("r"),
 		key.WithHelp("r", "rescan"),
+	),
+	Edit: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("e", "edit description"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),

@@ -43,6 +43,28 @@ func (s *Snap) Scan() ([]model.Package, error) {
 	return pkgs, nil
 }
 
+func (s *Snap) CheckUpdates(pkgs []model.Package) map[string]string {
+	out, err := exec.Command("snap", "refresh", "--list").Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+
+	updates := make(map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	first := true
+	for scanner.Scan() {
+		if first {
+			first = false
+			continue // skip header
+		}
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 {
+			updates[fields[0]] = fields[1]
+		}
+	}
+	return updates
+}
+
 func (s *Snap) Describe(pkgs []model.Package) map[string]string {
 	descs := make(map[string]string)
 	for _, p := range pkgs {

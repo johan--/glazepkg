@@ -39,6 +39,36 @@ func (a *AUR) Scan() ([]model.Package, error) {
 	return pkgs, nil
 }
 
+func (a *AUR) CheckUpdates(pkgs []model.Package) map[string]string {
+	// Check if an AUR helper is available (yay, paru)
+	var cmd *exec.Cmd
+	if commandExists("yay") {
+		cmd = exec.Command("yay", "-Qum")
+	} else if commandExists("paru") {
+		cmd = exec.Command("paru", "-Qum")
+	} else {
+		return nil
+	}
+
+	out, err := cmd.Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+
+	updates := make(map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		// Format: "name old_ver -> new_ver" or "name new_ver"
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 4 {
+			updates[fields[0]] = fields[3]
+		} else if len(fields) >= 2 {
+			updates[fields[0]] = fields[1]
+		}
+	}
+	return updates
+}
+
 func (a *AUR) Describe(pkgs []model.Package) map[string]string {
 	descs := make(map[string]string)
 	for _, pkg := range pkgs {

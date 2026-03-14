@@ -14,6 +14,7 @@ import (
 	"github.com/neur0map/glazepkg/internal/manager"
 	"github.com/neur0map/glazepkg/internal/model"
 	"github.com/neur0map/glazepkg/internal/snapshot"
+	"github.com/neur0map/glazepkg/internal/updater"
 )
 
 type view int
@@ -23,6 +24,10 @@ const (
 	viewDetail
 	viewDiff
 )
+
+type updateAvailableMsg struct {
+	latest string
+}
 
 type scanDoneMsg struct {
 	pkgs      []model.Package
@@ -50,6 +55,10 @@ type descriptionsDoneMsg struct {
 	descs map[string]string
 }
 
+type updatesDoneMsg struct {
+	updates map[string]string // key → latest version
+}
+
 type exportDoneMsg struct {
 	path string
 	err  error
@@ -70,7 +79,10 @@ type Model struct {
 	statusMsg    string
 
 	// Detail
-	detailPkg model.Package
+	detailPkg    model.Package
+	editingDesc  bool
+	descInput    textinput.Model
+	userNotes    map[string]string
 
 	// Diff
 	currentDiff model.Diff
@@ -89,17 +101,32 @@ type Model struct {
 	loadingDescs bool
 	descCache    *manager.DescriptionCache
 
+	// Updates
+	loadingUpdates bool
+	updateCache    *manager.UpdateCache
+
+	// Update banner
+	version      string
+	updateBanner string
+
 	// Spinner
 	spinner spinner.Model
 }
 
-func NewModel() Model {
+func NewModel(version string) Model {
 	ti := textinput.New()
 	ti.Placeholder = "fuzzy search..."
 	ti.CharLimit = 64
 	ti.Prompt = "/ "
 	ti.PromptStyle = StyleFilterPrompt
 	ti.TextStyle = StyleFilterText
+
+	di := textinput.New()
+	di.Placeholder = "enter description..."
+	di.CharLimit = 200
+	di.Prompt = "Description: "
+	di.PromptStyle = StyleDetailKey
+	di.TextStyle = StyleDetailVal
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -108,14 +135,31 @@ func NewModel() Model {
 	return Model{
 		spinner:     sp,
 		filterInput: ti,
+		descInput:   di,
 		view:        viewList,
 		scanning:    true,
 		descCache:   manager.NewDescriptionCache(),
+		updateCache: manager.NewUpdateCache(),
+		userNotes:   snapshot.LoadNotes(),
+		version:     version,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, loadOrScan)
+	return tea.Batch(m.spinner.Tick, loadOrScan, checkForUpdate(m.version))
+}
+
+func checkForUpdate(currentVersion string) tea.Cmd {
+	return func() tea.Msg {
+		if currentVersion == "dev" {
+			return nil
+		}
+		latest, err := updater.LatestVersion()
+		if err != nil || latest == currentVersion {
+			return nil
+		}
+		return updateAvailableMsg{latest: latest}
+	}
 }
 
 // loadOrScan tries the scan cache first; if fresh, returns cached packages instantly.
@@ -194,6 +238,14 @@ func fetchDescriptions(pkgs []model.Package, cache *manager.DescriptionCache) te
 	}
 }
 
+func fetchUpdates(pkgs []model.Package, cache *manager.UpdateCache) tea.Cmd {
+	return func() tea.Msg {
+		mgrs := manager.All()
+		updates := manager.FetchUpdates(mgrs, pkgs, cache)
+		return updatesDoneMsg{updates: updates}
+	}
+}
+
 func doExport(pkgs []model.Package, format int) tea.Cmd {
 	return func() tea.Msg {
 		path, err := exportPackages(pkgs, format)
@@ -212,7 +264,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case spinner.TickMsg:
-		if m.scanning || m.loadingDescs {
+		if m.scanning || m.loadingDescs || m.loadingUpdates {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
@@ -239,8 +291,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loadingDescs = false
 		// Merge descriptions into packages
 		for i := range m.allPkgs {
-			if desc, ok := msg.descs[m.allPkgs[i].Key()]; ok {
+			key := m.allPkgs[i].Key()
+			if desc, ok := msg.descs[key]; ok {
 				m.allPkgs[i].Description = desc
+			}
+			// User notes override fetched descriptions
+			if note, ok := m.userNotes[key]; ok {
+				m.allPkgs[i].Description = note
+			}
+		}
+		m.applyFilter()
+		// Dispatch background update check
+		m.loadingUpdates = true
+		return m, fetchUpdates(m.allPkgs, m.updateCache)
+
+	case updatesDoneMsg:
+		m.loadingUpdates = false
+		for i := range m.allPkgs {
+			if latest, ok := msg.updates[m.allPkgs[i].Key()]; ok {
+				m.allPkgs[i].LatestVersion = latest
 			}
 		}
 		m.applyFilter()
@@ -269,8 +338,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "detail error: " + msg.err.Error()
 			return m, nil
 		}
+		// Carry over LatestVersion and Source from the list entry,
+		// since QueryDetail always returns Source=pacman even for AUR.
+		if m.cursor < len(m.filteredPkgs) {
+			listPkg := m.filteredPkgs[m.cursor]
+			if listPkg.Name == msg.pkg.Name {
+				msg.pkg.LatestVersion = listPkg.LatestVersion
+				msg.pkg.Source = listPkg.Source
+			}
+		}
 		m.detailPkg = msg.pkg
 		m.view = viewDetail
+		return m, nil
+
+	case updateAvailableMsg:
+		m.updateBanner = fmt.Sprintf("update available: %s → %s — run gpk update", m.version, msg.latest)
 		return m, nil
 
 	case exportDoneMsg:
@@ -287,6 +369,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.filterInput, cmd = m.filterInput.Update(msg)
 		m.applyFilter()
+		return m, cmd
+	}
+
+	if m.editingDesc {
+		var cmd tea.Cmd
+		m.descInput, cmd = m.descInput.Update(msg)
 		return m, cmd
 	}
 
@@ -329,6 +417,45 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Edit mode intercepts keys
+	if m.editingDesc {
+		switch key {
+		case "esc":
+			m.editingDesc = false
+			m.descInput.Blur()
+			return m, nil
+		case "enter":
+			m.editingDesc = false
+			m.descInput.Blur()
+			desc := strings.TrimSpace(m.descInput.Value())
+			pkgKey := m.detailPkg.Key()
+			if desc == "" {
+				delete(m.userNotes, pkgKey)
+			} else {
+				m.userNotes[pkgKey] = desc
+			}
+			m.detailPkg.Description = desc
+			// Update in allPkgs too
+			for i := range m.allPkgs {
+				if m.allPkgs[i].Key() == pkgKey {
+					m.allPkgs[i].Description = desc
+					break
+				}
+			}
+			m.applyFilter()
+			if err := snapshot.SaveNotes(m.userNotes); err != nil {
+				m.statusMsg = "note save error: " + err.Error()
+			} else {
+				m.statusMsg = "description saved"
+			}
+			return m, nil
+		default:
+			var cmd tea.Cmd
+			m.descInput, cmd = m.descInput.Update(msg)
+			return m, cmd
+		}
+	}
+
 	// Filter mode intercepts keys
 	if m.filtering {
 		switch key {
@@ -366,6 +493,11 @@ func (m *Model) handleListKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q":
 		return m, tea.Quit
+	case "esc":
+		if m.filterInput.Value() != "" {
+			m.filterInput.SetValue("")
+			m.applyFilter()
+		}
 	case "/":
 		m.filtering = true
 		m.filterInput.Focus()
@@ -438,6 +570,11 @@ func (m *Model) handleDetailKey(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "q":
 		m.view = viewList
+	case "e":
+		m.editingDesc = true
+		m.descInput.SetValue(m.detailPkg.Description)
+		m.descInput.Focus()
+		return m, textinput.Blink
 	}
 	return m, nil
 }
@@ -488,13 +625,20 @@ func (m Model) View() string {
 	// Title bar
 	title := StyleTitle.Render("GlazePKG")
 	b.WriteString(title)
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+
+	// Update banner
+	if m.updateBanner != "" {
+		b.WriteString(StyleUpdateBanner.Render("  " + m.updateBanner))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 
 	switch m.view {
 	case viewList:
 		m.renderListView(&b)
 	case viewDetail:
-		b.WriteString(renderDetail(m.detailPkg))
+		b.WriteString(renderDetail(m.detailPkg, m.editingDesc, m.descInput.View()))
 	case viewDiff:
 		b.WriteString(renderDiffView(m.currentDiff, m.diffSince))
 	}
@@ -556,11 +700,15 @@ func (m Model) renderListView(b *strings.Builder) {
 	}
 	b.WriteString(renderPackageTable(m.filteredPkgs, m.cursor, listHeight, m.width))
 
-	// Loading descriptions indicator
+	// Loading indicators
 	if m.loadingDescs {
 		b.WriteString("\n  ")
 		b.WriteString(m.spinner.View())
 		b.WriteString(StyleDim.Render(" Loading descriptions..."))
+	} else if m.loadingUpdates {
+		b.WriteString("\n  ")
+		b.WriteString(m.spinner.View())
+		b.WriteString(StyleDim.Render(" Checking for updates..."))
 	}
 }
 
@@ -593,7 +741,10 @@ func (m Model) renderStatusBar() string {
 	case viewList:
 		return StyleStatusBar.Render("/: search  tab: source  enter: detail  r: rescan  s: snap  d: diff  e: export  ?: help  q: quit")
 	case viewDetail:
-		return StyleStatusBar.Render("esc: back    q: quit")
+		if m.editingDesc {
+			return StyleStatusBar.Render("enter: save    esc: cancel")
+		}
+		return StyleStatusBar.Render("e: edit description    esc: back    q: quit")
 	case viewDiff:
 		return StyleStatusBar.Render("esc: back    q: quit")
 	}

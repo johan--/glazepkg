@@ -41,11 +41,14 @@ jobs:
           go-version-file: go.mod
 
       - name: Build binaries
+        env:
+          TAG: ${{ steps.bump.outputs.new_tag }}
+          LDFLAGS: -s -w -X main.version=${{ steps.bump.outputs.new_tag }}
         run: |
-          GOOS=darwin GOARCH=arm64 go build -o gpk-darwin-arm64 ./cmd/gpk
-          GOOS=darwin GOARCH=amd64 go build -o gpk-darwin-amd64 ./cmd/gpk
-          GOOS=linux GOARCH=amd64 go build -o gpk-linux-amd64 ./cmd/gpk
-          GOOS=linux GOARCH=arm64 go build -o gpk-linux-arm64 ./cmd/gpk
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o gpk-darwin-arm64 ./cmd/gpk
+          GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o gpk-darwin-amd64 ./cmd/gpk
+          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o gpk-linux-amd64 ./cmd/gpk
+          GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o gpk-linux-arm64 ./cmd/gpk
 
       - name: Create release
         uses: softprops/action-gh-release@v2

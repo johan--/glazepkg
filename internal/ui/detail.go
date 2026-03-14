@@ -7,7 +7,7 @@ import (
 	"github.com/neur0map/glazepkg/internal/model"
 )
 
-func renderDetail(pkg model.Package) string {
+func renderDetail(pkg model.Package, editing bool, descInput string) string {
 	var b strings.Builder
 
 	// Header
@@ -20,6 +20,8 @@ func renderDetail(pkg model.Package) string {
 	b.WriteString(StyleDim.Render("  " + strings.Repeat("─", 75)))
 	b.WriteString("\n\n")
 
+	hasUpdate := pkg.LatestVersion != "" && pkg.LatestVersion != pkg.Version
+
 	// Fields
 	fields := []struct {
 		key string
@@ -31,7 +33,6 @@ func renderDetail(pkg model.Package) string {
 		{"Size", pkg.Size},
 		{"Depends on", formatList(pkg.DependsOn)},
 		{"Required by", formatList(pkg.RequiredBy)},
-		{"Description", pkg.Description},
 	}
 
 	for _, f := range fields {
@@ -41,6 +42,31 @@ func renderDetail(pkg model.Package) string {
 		b.WriteString("  ")
 		b.WriteString(StyleDetailKey.Render(f.key))
 		b.WriteString(StyleDetailVal.Render(f.val))
+		b.WriteString("\n")
+	}
+
+	// Update available banner
+	if hasUpdate {
+		b.WriteString("\n")
+		updateLine := fmt.Sprintf("  ↑ Update available: %s → %s", pkg.Version, pkg.LatestVersion)
+		b.WriteString(StyleUpdateBanner.Render(updateLine))
+		b.WriteString("\n")
+	}
+
+	// Description field (always shown)
+	if editing {
+		b.WriteString("  ")
+		b.WriteString(descInput)
+		b.WriteString("\n")
+	} else if pkg.Description != "" {
+		b.WriteString("  ")
+		b.WriteString(StyleDetailKey.Render("Description"))
+		b.WriteString(StyleDetailVal.Render(pkg.Description))
+		b.WriteString("\n")
+	} else {
+		b.WriteString("  ")
+		b.WriteString(StyleDetailKey.Render("Description"))
+		b.WriteString(StyleDim.Render("(none) — press e to add"))
 		b.WriteString("\n")
 	}
 

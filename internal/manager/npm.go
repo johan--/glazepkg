@@ -45,6 +45,31 @@ func (n *Npm) Scan() ([]model.Package, error) {
 	return pkgs, nil
 }
 
+func (n *Npm) CheckUpdates(pkgs []model.Package) map[string]string {
+	out, err := exec.Command("npm", "outdated", "-g", "--json").Output()
+	if err != nil && out == nil {
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
+	}
+
+	var outdated map[string]struct {
+		Latest string `json:"latest"`
+	}
+	if err := json.Unmarshal(out, &outdated); err != nil {
+		return nil
+	}
+
+	updates := make(map[string]string)
+	for name, info := range outdated {
+		if info.Latest != "" {
+			updates[name] = info.Latest
+		}
+	}
+	return updates
+}
+
 func (n *Npm) Describe(pkgs []model.Package) map[string]string {
 	descs := make(map[string]string)
 	for _, pkg := range pkgs {

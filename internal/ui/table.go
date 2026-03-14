@@ -65,10 +65,13 @@ func renderPackageTable(pkgs []model.Package, cursor, height, width int) string 
 	lines = append(lines, header)
 	lines = append(lines, StyleDim.Render("  "+strings.Repeat("─", min(usable, width-4))))
 
+	updateIndicator := lipgloss.NewStyle().Foreground(ColorGreen).Bold(true)
+
 	for i := start; i < end; i++ {
 		p := pkgs[i]
 		name := truncate(p.Name, colName-2)
-		ver := truncate(p.Version, colVer-2)
+		hasUpdate := p.LatestVersion != "" && p.LatestVersion != p.Version
+		ver := truncate(p.Version, colVer-4)
 		badge := renderFixedBadge(p.Source)
 
 		// For dependency packages, show what requires them
@@ -85,16 +88,24 @@ func renderPackageTable(pkgs []model.Package, cursor, height, width int) string 
 
 		if i == cursor {
 			// Selected: highlight name+version+desc, badge stays colored
+			verCell := StyleSelected.Render(ver)
+			if hasUpdate {
+				verCell += " " + updateIndicator.Render("↑")
+			}
 			line := "  " +
 				padCell(StyleSelected.Render(name), colName) +
-				padCell(StyleSelected.Render(ver), colVer) +
+				padCell(verCell, colVer) +
 				padCell(badge, colBadge) +
 				StyleSelected.Render(desc)
 			lines = append(lines, line)
 		} else {
+			verCell := StyleDim.Render(ver)
+			if hasUpdate {
+				verCell += " " + updateIndicator.Render("↑")
+			}
 			line := "  " +
 				padCell(StyleNormal.Render(name), colName) +
-				padCell(StyleDim.Render(ver), colVer) +
+				padCell(verCell, colVer) +
 				padCell(badge, colBadge) +
 				StyleDim.Render(desc)
 			lines = append(lines, line)

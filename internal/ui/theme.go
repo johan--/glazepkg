@@ -86,6 +86,10 @@ var (
 			Padding(1, 2).
 			Foreground(ColorText)
 
+	StyleUpdateBanner = lipgloss.NewStyle().
+				Foreground(ColorYellow).
+				Bold(true)
+
 	StyleOverlayTitle = lipgloss.NewStyle().
 				Foreground(ColorBlue).
 				Bold(true)

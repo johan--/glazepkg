@@ -22,15 +22,16 @@ const (
 )
 
 type Package struct {
-	Name        string    `json:"name"`
-	Version     string    `json:"version"`
-	Source      Source    `json:"source"`
-	Description string    `json:"description,omitempty"`
-	Size        string    `json:"size,omitempty"`
-	Repository  string    `json:"repository,omitempty"`
-	DependsOn   []string  `json:"depends_on,omitempty"`
-	RequiredBy  []string  `json:"required_by,omitempty"`
-	InstalledAt time.Time `json:"installed_at"`
+	Name          string    `json:"name"`
+	Version       string    `json:"version"`
+	Source        Source    `json:"source"`
+	Description   string    `json:"description,omitempty"`
+	Size          string    `json:"size,omitempty"`
+	Repository    string    `json:"repository,omitempty"`
+	DependsOn     []string  `json:"depends_on,omitempty"`
+	RequiredBy    []string  `json:"required_by,omitempty"`
+	InstalledAt   time.Time `json:"installed_at"`
+	LatestVersion string    `json:"-"` // not persisted, populated at runtime
 }
 
 // Key returns a unique identifier for this package across all managers.

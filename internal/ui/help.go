@@ -19,6 +19,7 @@ func renderHelpOverlay(width, height int) string {
 		{"/", "Fuzzy search"},
 		{"Esc", "Clear search / close overlay"},
 		{"Enter", "Package details"},
+		{"e (detail)", "Edit description"},
 		{"r", "Rescan all managers"},
 		{"s", "Save snapshot"},
 		{"d", "Diff against last snapshot"},

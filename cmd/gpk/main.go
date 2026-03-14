@@ -7,19 +7,44 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/neur0map/glazepkg/internal/ui"
+	"github.com/neur0map/glazepkg/internal/updater"
 )
 
+// Set via -ldflags at build time.
+var version = "dev"
+
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "--help" || os.Args[1] == "-h" || os.Args[1] == "help") {
-		printHelp()
-		return
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--help", "-h", "help":
+			printHelp()
+			return
+		case "--version", "-v", "version":
+			fmt.Printf("gpk %s\n", version)
+			return
+		case "update":
+			runUpdate()
+			return
+		}
 	}
 
-	p := tea.NewProgram(ui.NewModel(), tea.WithAltScreen())
+	p := tea.NewProgram(ui.NewModel(version), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func runUpdate() {
+	fmt.Printf("gpk %s — checking for updates...\n", version)
+
+	newVersion, err := updater.Update(version)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("updated: %s → %s\n", version, newVersion)
 }
 
 func printHelp() {
@@ -27,6 +52,8 @@ func printHelp() {
 
 Usage:
   gpk              Launch TUI
+  gpk update       Self-update to latest release
+  gpk version      Show current version
   gpk --help       Show this help
 
 Keybinds:
@@ -38,6 +65,7 @@ Keybinds:
   /                 Fuzzy search
   Esc               Clear search / close overlay
   Enter             Package details
+  e (detail)        Edit description
   r                 Rescan all managers
   s                 Save snapshot
   d                 Diff against last snapshot

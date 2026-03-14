@@ -47,6 +47,28 @@ func (d *Dnf) Scan() ([]model.Package, error) {
 	return pkgs, nil
 }
 
+func (d *Dnf) CheckUpdates(pkgs []model.Package) map[string]string {
+	out, _ := exec.Command("dnf", "check-update", "--quiet").Output()
+	if len(out) == 0 {
+		return nil
+	}
+
+	updates := make(map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
+		}
+		name := fields[0]
+		if idx := strings.LastIndex(name, "."); idx > 0 {
+			name = name[:idx]
+		}
+		updates[name] = fields[1]
+	}
+	return updates
+}
+
 func (d *Dnf) Describe(pkgs []model.Package) map[string]string {
 	descs := make(map[string]string)
 	for _, p := range pkgs {

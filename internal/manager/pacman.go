@@ -91,6 +91,34 @@ func QueryDetail(name string) (model.Package, error) {
 	return pkg, nil
 }
 
+func (p *Pacman) CheckUpdates(pkgs []model.Package) map[string]string {
+	// checkupdates (from pacman-contrib) is preferred as it doesn't need root
+	// and doesn't modify the sync database. Falls back to pacman -Qu.
+	var out []byte
+	var err error
+	if commandExists("checkupdates") {
+		out, err = exec.Command("checkupdates").Output()
+	} else {
+		out, err = exec.Command("pacman", "-Qu").Output()
+	}
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+
+	updates := make(map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		// Format: "name old_ver -> new_ver"
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 4 {
+			updates[fields[0]] = fields[3]
+		} else if len(fields) >= 2 {
+			updates[fields[0]] = fields[1]
+		}
+	}
+	return updates
+}
+
 func parseField(line string) (key, val string, ok bool) {
 	idx := strings.Index(line, ":")
 	if idx < 0 {

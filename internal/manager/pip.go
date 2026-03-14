@@ -44,6 +44,27 @@ func (p *Pip) Scan() ([]model.Package, error) {
 	return pkgs, nil
 }
 
+func (p *Pip) CheckUpdates(pkgs []model.Package) map[string]string {
+	out, err := exec.Command("pip", "list", "--outdated", "--format=json").Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+
+	var entries []struct {
+		Name          string `json:"name"`
+		LatestVersion string `json:"latest_version"`
+	}
+	if err := json.Unmarshal(out, &entries); err != nil {
+		return nil
+	}
+
+	updates := make(map[string]string)
+	for _, e := range entries {
+		updates[e.Name] = e.LatestVersion
+	}
+	return updates
+}
+
 func (p *Pip) Describe(pkgs []model.Package) map[string]string {
 	descs := make(map[string]string)
 	for _, pkg := range pkgs {

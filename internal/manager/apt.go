@@ -38,6 +38,33 @@ func (a *Apt) Scan() ([]model.Package, error) {
 	return pkgs, nil
 }
 
+func (a *Apt) CheckUpdates(pkgs []model.Package) map[string]string {
+	out, err := exec.Command("apt", "list", "--upgradable").Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+
+	updates := make(map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "Listing") {
+			continue
+		}
+		// Format: "name/source version arch [upgradable from: old_ver]"
+		parts := strings.SplitN(line, "/", 2)
+		if len(parts) < 2 {
+			continue
+		}
+		name := parts[0]
+		fields := strings.Fields(parts[1])
+		if len(fields) >= 2 {
+			updates[name] = fields[1]
+		}
+	}
+	return updates
+}
+
 func (a *Apt) Describe(pkgs []model.Package) map[string]string {
 	descs := make(map[string]string)
 	for _, p := range pkgs {

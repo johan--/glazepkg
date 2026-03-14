@@ -43,6 +43,23 @@ func (f *Flatpak) Scan() ([]model.Package, error) {
 	return pkgs, nil
 }
 
+func (f *Flatpak) CheckUpdates(pkgs []model.Package) map[string]string {
+	out, err := exec.Command("flatpak", "remote-ls", "--updates", "--columns=application,version").Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+
+	updates := make(map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 {
+			updates[fields[0]] = fields[1]
+		}
+	}
+	return updates
+}
+
 func (f *Flatpak) Describe(pkgs []model.Package) map[string]string {
 	descs := make(map[string]string)
 	for _, pkg := range pkgs {

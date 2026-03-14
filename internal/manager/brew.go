@@ -99,6 +99,42 @@ func (b *Brew) Scan() ([]model.Package, error) {
 	return pkgs, nil
 }
 
+func (b *Brew) CheckUpdates(pkgs []model.Package) map[string]string {
+	out, err := exec.Command("brew", "outdated", "--json").Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+
+	var outdated struct {
+		Formulae []struct {
+			Name             string `json:"name"`
+			CurrentVersion   string `json:"current_version"`
+			InstalledVersion string `json:"installed_versions"`
+		} `json:"formulae"`
+	}
+	// brew outdated --json returns an array of objects at top level
+	var arr []struct {
+		Name           string `json:"name"`
+		CurrentVersion string `json:"current_version"`
+	}
+	if err := json.Unmarshal(out, &arr); err == nil {
+		updates := make(map[string]string)
+		for _, f := range arr {
+			updates[f.Name] = f.CurrentVersion
+		}
+		return updates
+	}
+	// Try the nested format (newer brew versions)
+	if err := json.Unmarshal(out, &outdated); err == nil {
+		updates := make(map[string]string)
+		for _, f := range outdated.Formulae {
+			updates[f.Name] = f.CurrentVersion
+		}
+		return updates
+	}
+	return nil
+}
+
 func (b *Brew) Describe(pkgs []model.Package) map[string]string {
 	// Descriptions are already populated during Scan from the same JSON.
 	// This is a fallback for the description cache.
